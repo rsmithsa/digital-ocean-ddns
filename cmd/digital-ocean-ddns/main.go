@@ -16,7 +16,7 @@ const doAPIRecords string = doAPIRoot + "/domains/%s/records?type=A&name=%s"
 const doUpdateRecord string = doAPIRoot + "/domains/%s/records/%d"
 const doCreateRecord string = doAPIRoot + "/domains/%s/records"
 
-const apiToken = "fe533fc3953967d30fb74058db9e14278606eaa8d825fcf38a1778d1141ec384"
+const apiToken = ""
 
 type server struct{}
 
