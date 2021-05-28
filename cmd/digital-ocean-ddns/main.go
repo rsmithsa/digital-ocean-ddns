@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/rsmithsa/digital-ocean-ddns/internal/doapiv2"
+
 	"golang.org/x/net/publicsuffix"
 )
 
@@ -46,7 +48,7 @@ func hasIPChanged(ipAddr string, tokenString string, hostName string) (domainRec
 
 	subDomainName := strings.TrimSuffix(hostName, "."+domainName)
 
-	reqString := fmt.Sprintf(doapiv2.doAPIRecords, domainName, hostName)
+	reqString := fmt.Sprintf(doapiv2.DODomainRecordsFilter, domainName, "A", hostName)
 	req, err := http.NewRequest("GET", reqString, nil)
 	if err != nil {
 		return domainRecord{}, false, fmt.Errorf("domain records request failed: %q", err)
@@ -95,7 +97,7 @@ func updateRecord(record domainRecord, tokenString string, hostName string, ipAd
 	body := new(bytes.Buffer)
 	json.NewEncoder(body).Encode(record)
 
-	reqString := fmt.Sprintf(doapiv2.doUpdateRecord, domainName, record.Id)
+	reqString := fmt.Sprintf(doapiv2.DODomainsUpdateRecord, domainName, record.Id)
 	req, err := http.NewRequest("PUT", reqString, body)
 	if err != nil {
 		return domainRecord{}, fmt.Errorf("domain update request failed: %q", err)
@@ -135,7 +137,7 @@ func createRecord(record domainRecord, tokenString string, hostName string) (dom
 	body := new(bytes.Buffer)
 	json.NewEncoder(body).Encode(record)
 
-	reqString := fmt.Sprintf(doapiv2.doCreateRecord, domainName)
+	reqString := fmt.Sprintf(doapiv2.DODomainsCreateRecord, domainName)
 	req, err := http.NewRequest("POST", reqString, body)
 	if err != nil {
 		return domainRecord{}, fmt.Errorf("domain create request failed: %q", err)
