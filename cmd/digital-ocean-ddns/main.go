@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -17,154 +15,51 @@ const apiToken = ""
 
 type server struct{}
 
-type domainRecord struct {
-	Id       int    `json:"id"`
-	Type     string `json:"type"`
-	Name     string `json:"name"`
-	Data     string `json:"data"`
-	Priority *int   `json:"priority"`
-	Port     *int   `json:"port"`
-	TTL      int    `json:"ttl"`
-	Weight   *int   `json:"weight"`
-	Flags    *int   `json:"flags"`
-	Tag      string `json:"tag"`
-}
-
-type singleDomainRecord struct {
-	DomainRecord domainRecord `json:"domain_record"`
-}
-
-type domainRecords struct {
-	DomainRecords []domainRecord `json:"domain_records"`
-}
-
-func hasIPChanged(ipAddr string, tokenString string, hostName string) (domainRecord, bool, error) {
-	drs := new(domainRecords)
-
+func hasIPChanged(ipAddr string, token string, hostName string) (doapiv2.DomainRecord, bool, error) {
 	domainName, err := publicsuffix.EffectiveTLDPlusOne(hostName)
 	if err != nil {
-		return domainRecord{}, false, fmt.Errorf("unable to parse hostname: %q", err)
+		return doapiv2.DomainRecord{}, false, fmt.Errorf("unable to parse hostname: %q", err)
 	}
 
 	subDomainName := strings.TrimSuffix(hostName, "."+domainName)
 
-	reqString := fmt.Sprintf(doapiv2.DODomainRecordsFilter, domainName, "A", hostName)
-	req, err := http.NewRequest("GET", reqString, nil)
+	result, err := doapiv2.GetDomainRecordsByNameAndType(domainName, token, "A", hostName)
 	if err != nil {
-		return domainRecord{}, false, fmt.Errorf("domain records request failed: %q", err)
+		return doapiv2.DomainRecord{}, false, err
 	}
 
-	req.Header.Add("Authorization", "Bearer "+tokenString)
-	resp, err := http.DefaultClient.Do(req)
-
-	if err != nil {
-		return domainRecord{}, false, fmt.Errorf("domain records (GET) failed: %q", err)
-	}
-
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return domainRecord{}, false, fmt.Errorf("non-OK status code returned [ %d ]; %q", resp.StatusCode, resp.Status)
-	}
-
-	err = json.NewDecoder(resp.Body).Decode(drs)
-
-	if err != nil {
-		return domainRecord{}, false, fmt.Errorf("decoding JSON response failed: %q", err)
-	}
-
-	if len(drs.DomainRecords) == 0 {
+	if len(result) == 0 {
 		log.Printf("Record not found: [ %q ]", hostName)
 		// New record required
-		return domainRecord{Type: "A", Name: subDomainName, Data: ipAddr, TTL: 60}, true, nil
+		return doapiv2.DomainRecord{Type: "A", Name: subDomainName, Data: ipAddr, TTL: 60}, true, nil
 	}
 
-	if drs.DomainRecords[0].Data == ipAddr {
-		return drs.DomainRecords[0], false, nil
+	if result[0].Data == ipAddr {
+		return result[0], false, nil
 	} else {
-		return drs.DomainRecords[0], true, nil
+		return result[0], true, nil
 	}
 }
 
-func updateRecord(record domainRecord, tokenString string, hostName string, ipAddr string) (domainRecord, error) {
-	log.Print("Update")
+func updateRecord(record doapiv2.DomainRecord, token string, hostName string, ipAddr string) (doapiv2.DomainRecord, error) {
+	log.Printf("Updating record: [ %q ]", hostName)
 	domainName, err := publicsuffix.EffectiveTLDPlusOne(hostName)
 	if err != nil {
-		return domainRecord{}, fmt.Errorf("unable to parse hostname: %q", err)
+		return doapiv2.DomainRecord{}, fmt.Errorf("unable to parse hostname: %q", err)
 	}
 
 	record.Data = ipAddr
-	body := new(bytes.Buffer)
-	json.NewEncoder(body).Encode(record)
-
-	reqString := fmt.Sprintf(doapiv2.DODomainsUpdateRecord, domainName, record.Id)
-	req, err := http.NewRequest("PUT", reqString, body)
-	if err != nil {
-		return domainRecord{}, fmt.Errorf("domain update request failed: %q", err)
-	}
-
-	req.Header.Add("Authorization", "Bearer "+tokenString)
-	req.Header.Add("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-
-	if err != nil {
-		return domainRecord{}, fmt.Errorf("domain record (PUT) failed: %q", err)
-	}
-
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return domainRecord{}, fmt.Errorf("non-OK status code returned [ %d ]; %q", resp.StatusCode, resp.Status)
-	}
-
-	dr := new(singleDomainRecord)
-	err = json.NewDecoder(resp.Body).Decode(dr)
-
-	if err != nil {
-		return domainRecord{}, fmt.Errorf("decoding JSON response failed: %q", err)
-	}
-
-	return dr.DomainRecord, nil
+	return doapiv2.UpdateDomainRecord(domainName, token, record)
 }
 
-func createRecord(record domainRecord, tokenString string, hostName string) (domainRecord, error) {
-	log.Print("Update")
+func createRecord(record doapiv2.DomainRecord, token string, hostName string) (doapiv2.DomainRecord, error) {
+	log.Printf("Creating record: [ %q ]", hostName)
 	domainName, err := publicsuffix.EffectiveTLDPlusOne(hostName)
 	if err != nil {
-		return domainRecord{}, fmt.Errorf("unable to parse hostname: %q", err)
+		return doapiv2.DomainRecord{}, fmt.Errorf("unable to parse hostname: %q", err)
 	}
 
-	body := new(bytes.Buffer)
-	json.NewEncoder(body).Encode(record)
-
-	reqString := fmt.Sprintf(doapiv2.DODomainsCreateRecord, domainName)
-	req, err := http.NewRequest("POST", reqString, body)
-	if err != nil {
-		return domainRecord{}, fmt.Errorf("domain create request failed: %q", err)
-	}
-
-	req.Header.Add("Authorization", "Bearer "+tokenString)
-	req.Header.Add("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-
-	if err != nil {
-		return domainRecord{}, fmt.Errorf("domain record (POST) failed: %q", err)
-	}
-
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return domainRecord{}, fmt.Errorf("non-OK status code returned [ %d ]; %q", resp.StatusCode, resp.Status)
-	}
-
-	dr := new(singleDomainRecord)
-	err = json.NewDecoder(resp.Body).Decode(dr)
-
-	if err != nil {
-		return domainRecord{}, fmt.Errorf("decoding JSON response failed: %q", err)
-	}
-
-	return dr.DomainRecord, nil
+	return doapiv2.CreateDomainRecord(domainName, token, record)
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
